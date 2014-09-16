@@ -97,16 +97,21 @@ class."
         :while message
         :do (etypecase message
               (method-return-message (let ((fn (gethash (message-reply-serial message) *message-dispatch*)))
-                                       (if fn
-                                        (funcall fn message)
-                                        (setf *last-message* message))))
+                                       (print (message-signature message))
+                                       (cond
+                                         ((functionp fn)
+                                          (funcall fn message)
+                                          (setf *last-message* message))
+                                         ((futurep fn)
+                                          (finish fn message)
+                                          (setf *last-message* message)))))
               (signal-message nil)
               (error-message (error 'method-error :arguments (message-body message))))))
 
 (defun process-outgoing-messages ()
   (loop :for message = (read-mail *out-queue*)
         :when message
-          :do (format t "Sending ~a~%" message)
+          :do (format t "sending ~a~%" message)
         :while message
         :do (send-message message *connection*)))
 
@@ -116,62 +121,116 @@ class."
       (setf (object-interface (interface-name interface) object) interface))
     object))
 
-(defun invoke-method1 (member
-                       &key (connection *connection*) path signature arguments interface
-                         destination no-reply no-auto-start (endianness :little-endian))
-  (let ((serial (connection-next-serial connection)))
-   (list
-    serial
-    (encode-message endianness :method-call
-                    (logior (if no-reply message-no-reply-expected 0)
-                            (if no-auto-start message-no-auto-start 0))
-                    1 serial path
-                    interface member nil nil
-                    destination nil signature arguments))))
-
-
-(defun invoke-method (member call-back
+(defun invoke-method (member
                       &key (connection *connection*) path signature arguments interface
-                        destination no-reply no-auto-start (dispatch *message-dispatch*))
-  (destructuring-bind (serial message)
-      (invoke-method1 member
-                      :connection connection
-                      :path path
-                      :signature signature
-                      :arguments arguments
-                      :interface interface
-                      :destination destination
-                      :no-reply no-reply
-                      :no-auto-start no-auto-start)
-    (setf (gethash serial dispatch) call-back)
-    (post-mail message *out-queue*)
-    (interrupt-thread *thread* 'process-outgoing-messages)))
+                        destination no-reply no-auto-start
+                        (endianness :little-endian)
+                        (dispatch *message-dispatch*))
+  (let* ((serial (connection-next-serial connection))
+         (message
+          (encode-message endianness :method-call
+                          (logior (if no-reply message-no-reply-expected 0)
+                                  (if no-auto-start message-no-auto-start 0))
+                          1 serial path
+                          interface member nil nil
+                          destination nil signature arguments)))
+    ;; dispatch message to different thread
+    (let ((future (make-future)))
+      (setf (gethash serial dispatch) future)
+      (post-mail message *out-queue*)
+      (interrupt-thread *thread* 'process-outgoing-messages)
+      future)))
 
-(defun fetch-introspection-document (call-back path destination &key (connection *connection*))
+
+(defun fetch-introspection-document (path destination &key (connection *connection*))
   (invoke-method "Introspect"
-                 call-back
                  :path path
                  :connection connection
                  :destination destination
                  :interface "org.freedesktop.DBus.Introspectable"))
 
+
+(defun signature-for-method (method-name interface-name object)
+  (method-signature (interface-method method-name (object-interface interface-name object))))
+
+
+(defun object-invoke (object interface-name method-name &rest args)
+  (let ((future (make-future)))
+        (attach
+          (invoke-method method-name
+                         :path (object-path object)
+                         :interface interface-name
+                         :destination (object-destination object)
+                         :signature (signature-for-method method-name interface-name object)
+                         :arguments args)
+          (lambda (reply)
+            (finish future (values-list (message-body reply)))))
+        future))
+
+
 (defun make-object-from-introspection (path destination &key (connection *connection*))
-  (let ((response-symbol (gensym)))
-    (with-call/cc
-      (setf (gethash response-symbol *responses*)
-            (make-object connection path destination
-                         (parse-introspection-document
-                          (car
-                           (message-body
-                            (let/cc k
-                              (fetch-introspection-document k path destination))))))))
-    response-symbol))
+  (let ((future (make-future))
+        (object (fetch-introspection-document path destination)))
+    (attach object
+            (lambda (message)
+              (finish future
+                      (make-object connection path destination
+                                   (parse-introspection-document
+                                    (car (message-body message)))))))
+    future))
+
+
+(defmacro with-introspected-object ((name path destination) &body forms)
+  (with-gensyms (object)
+    `(alet ((,object (make-object-from-introspection ,path ,destination)))
+       (flet ((,name (interface-name method-name &rest args)
+                (apply #'object-invoke ,object interface-name method-name args)))
+         ,@forms))))
 
 
 (defun nm-current-state ()
-  (let ((response-symbol (make-object-from-introspection "/org/freedesktop/NetworkManager"
-                                                         "org.freedesktop.NetworkManager")))
+  (let ((future (make-object-from-introspection
+                 "/org/freedesktop/NetworkManager"
+                 "org.freedesktop.NetworkManager")))
     (loop
       :do (handle-pending-messages)
-      :until (gethash response-symbol *responses*))
-    (gethash response-symbol *responses*)))
+      :until (future-finished-p future))
+    (apply #'values (future-values future))))
+
+
+(defmacro wait-for ((&key (timeout 5)) &body body)
+  `(let ((future (progn ,@body))
+         (until (+ (get-universal-time) ,timeout)))
+    (loop
+      :do (handle-pending-messages)
+      :if (future-finished-p future)
+        :do (return)
+      :if (> (get-universal-time) until)
+        :do (error "timed out."))
+    (future-values future)))
+
+(defun futures-map (function futures-list cb)
+  (flet ((call-back (result)
+           (declare (ignore result))
+           (when (every #'future-finished-p futures-list)
+             (funcall cb (mapcar #'future-values futures-list)))))
+    (dolist (future futures-list)
+      (attach (funcall function future) #'call-back))))
+
+
+(defmacro with-futures ((var futures-list) &body body)
+  (with-gensyms (callback futures future)
+    `(let ((,futures ,futures-list))
+        (flet ((,callback (result)
+                 (declare (ignore result))
+                 (when (every (lambda (f)
+                                (or (not (futurep f)) (future-finished-p f)))
+                              ,futures)
+                   (let ((,var (mapcar (lambda (f)
+                                         (if (futurep f)
+                                             (future-values f)
+                                             (values-list (ensure-list f))))
+                                       ,futures)))
+                       ,@body))))
+          (dolist (,future ,futures)
+            (attach ,future #',callback))))))

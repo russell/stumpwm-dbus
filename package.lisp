@@ -24,6 +24,9 @@
                 #:add-hook
                 #:remove-hook
                 #:*internal-loop-hook*)
+  (:import-from #:alexandria
+                #:with-gensyms
+                #:ensure-list)
   (:import-from #:bordeaux-threads
                 #:make-thread
                 #:thread-alive-p
@@ -34,38 +37,42 @@
                 #:event-base
                 #:close
                 #:add-timer)
-  (:import-from #:cl-cont
-                #:with-call/cc
-                #:call/cc
-                #:let/cc)
   (:import-from #:dbus
-                #:system-server-addresses
-                #:with-open-bus
-                #:connection
+                #:authenticate
+                #:bus
                 #:bus-connection
-                #:method-return-message
-                #:with-introspected-object
-                #:connection-pending-messages
+                #:connection
                 #:connection-event-base
-                #:signal-message
-                #:message-reply-serial
                 #:connection-next-serial
-                #:send-message
+                #:connection-pending-messages
                 #:encode-message
-                #:message-no-reply-expected
+                #:error-message
                 #:hello
+                #:interface-name
+                #:interface-method
+                #:message-body
                 #:message-no-auto-start
+                #:message-no-reply-expected
+                #:message-reply-serial
+                #:message-serial
+                #:message-signature
+                #:method-error
+                #:method-return-message
+                #:method-signature
                 #:object
                 #:object-interface
-                #:interface-name
+                #:object-connection
+                #:object-path
+                #:object-destination
+                #:list-object-interfaces
                 #:parse-introspection-document
-                #:message-serial
-                #:message-body
-                #:error-message
-                #:method-error
+                #:send-message
+                #:signal-message
                 #:supported-authentication-mechanisms
-                #:bus
-                #:authenticate)
+                #:system-server-addresses
+                #:with-introspected-object
+                #:with-open-bus
+                )
   (:import-from #:mailbox
                 #:make-mailbox
                 #:mailboxp
@@ -73,8 +80,26 @@
                 #:read-mail)
   (:import-from #:cl-async-future
                 #:future
+                #:futurep
                 #:make-future
-                #:do-add-callback
                 #:attach-errback
-                #:wait-for
-   ))
+                #:future-values
+                #:future-finished-p
+                #:attach
+                #:finish
+                #:alet)
+
+  (:export
+   #:make-object-from-introspection
+   #:object-invoke
+   #:interface-name
+   #:list-object-interfaces
+   #:with-introspected-object
+   #:make-future
+   #:futurep
+   #:attach
+   #:finish
+   #:alet
+   #:future-finished-p
+   #:future-values
+   #:with-futures))

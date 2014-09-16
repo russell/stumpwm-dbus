@@ -18,14 +18,13 @@
 
 ;;;; stumpwm.contrib.dbus.asd
 
-#-sbcl
-(error "Sorry, currently only with SBCL.")
 
 (asdf:defsystem #:stumpwm.contrib.dbus
   :serial t
   :description "DBUS integration for StumpWM"
   :author "Russell Sim <russell.sim@gmail.com>"
   :license "GPL"
-  :depends-on (#:stumpwm #:dbus #:bordeaux-threads #:mailbox)
+  :depends-on (#:stumpwm #:dbus #:bordeaux-threads #:mailbox
+                         #:cl-async-future #:alexandria)
   :components ((:file "package")
                (:file "dbus")))
