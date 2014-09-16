@@ -25,8 +25,6 @@
 (defvar *dbus* nil)
 (defvar *in-queue* (make-mailbox)
   "The list of responses being returned to StumpWM.")
-(defvar *out-queue* (make-mailbox)
-  "The list of messages being sent to DBUS.")
 (defvar *message-dispatch* (make-hash-table))
 (defvar *internal-dispatch* (make-hash-table))
 (defvar *responses* (make-hash-table))
@@ -108,12 +106,8 @@ class."
               (signal-message nil)
               (error-message (error 'method-error :arguments (message-body message))))))
 
-(defun process-outgoing-messages ()
-  (loop :for message = (read-mail *out-queue*)
-        :when message
-          :do (format t "sending ~a~%" message)
-        :while message
-        :do (send-message message *connection*)))
+(defun send-outgoing-message (message)
+  (send-message message *connection*))
 
 (defun make-object (connection path destination interfaces)
   (let ((object (make-instance 'object :connection connection :path path :destination destination)))
@@ -137,8 +131,7 @@ class."
     ;; dispatch message to different thread
     (let ((future (make-future)))
       (setf (gethash serial dispatch) future)
-      (post-mail message *out-queue*)
-      (interrupt-thread *thread* 'process-outgoing-messages)
+      (interrupt-thread *thread* 'send-outgoing-message message)
       future)))
 
 
