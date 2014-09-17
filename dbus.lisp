@@ -227,3 +227,8 @@ class."
                        ,@body))))
           (dolist (,future ,futures)
             (attach ,future #',callback))))))
+
+(defmacro with-future ((var) &body body)
+  `(let ((,var (make-future)))
+     ,@body
+     ,var))

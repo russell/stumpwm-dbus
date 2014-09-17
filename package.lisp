@@ -102,4 +102,5 @@
    #:alet
    #:future-finished-p
    #:future-values
+   #:with-future
    #:with-futures))
