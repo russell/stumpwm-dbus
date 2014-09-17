@@ -87,7 +87,8 @@
                 #:future-finished-p
                 #:attach
                 #:finish
-                #:alet)
+                #:alet
+                #:alet*)
 
   (:export
    #:make-object-from-introspection
@@ -100,6 +101,7 @@
    #:attach
    #:finish
    #:alet
+   #:alet*
    #:future-finished-p
    #:future-values
    #:with-future
