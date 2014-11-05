@@ -1,0 +1,12 @@
+* StumpWM DBUS
+
+This adds support for DBUS to StumpWM.  It does this by using a second
+event loop that handles messages from DBUS.  Messages are passed back
+to the StumpWM event loop via queues.
+
+** Installation
+
+#+BEGIN_SRC lisp
+(asdf:oos 'asdf:load-op :stumpwm.contrib.dbus)
+(stumpwm.contrib.dbus:open-connection)
+#+END_SRC

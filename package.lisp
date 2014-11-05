@@ -105,4 +105,6 @@
    #:future-finished-p
    #:future-values
    #:with-future
-   #:with-futures))
+   #:with-futures
+   #:open-connection
+   #:close-connection))
